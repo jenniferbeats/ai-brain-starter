@@ -13,7 +13,8 @@ itself a symlink, were not.
 
 What is asserted, at each place the pipeline touches a file:
   - the walker (`list_vault_files`) and the insight index (`load_vault_index`)
-    yield only notes that live inside the vault;
+    yield only notes that live inside the vault, and the walk never lists a
+    linked folder;
   - the writer (`process_file`) refuses a path that resolves outside the vault
     BEFORE it opens it, whichever way the path reached it;
   - the run summary counts and prints a refusal instead of filing it as an error.
@@ -173,6 +174,24 @@ class VaultBoundary(unittest.TestCase):
         crm = os.path.join(self.vault, "👤 CRM")
         found = sorted(os.path.basename(p) for p in _base.iter_vault_markdown(crm))
         self.assertEqual(found, ["Inside Person.md"])
+
+    def test_walker_never_lists_a_linked_folder(self):
+        """Filtering the results is not enough: a shared folder can be huge, or
+        sit on a stalled mount, so the walk must not go into it at all."""
+        listed = []
+        real_scandir = os.scandir
+
+        def record(path):
+            listed.append(os.fsdecode(path))
+            return real_scandir(path)
+
+        with mock.patch.object(os, "scandir", side_effect=record):
+            list(_dispatcher.list_vault_files())
+        self.assertIn(self.vault, listed)  # the recorder does see the walk
+        linked = (os.path.join(self.vault, "🤝 Shared"),
+                  os.path.join(self.vault, "👤 CRM", "Team Share"))
+        entered = [d for d in listed if any(d == p or d.startswith(p + os.sep) for p in linked)]
+        self.assertEqual(entered, [])
 
     def test_writer_refuses_a_path_that_resolves_outside_the_vault(self):
         for path in self.outside_paths:
