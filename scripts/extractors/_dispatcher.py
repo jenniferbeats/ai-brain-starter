@@ -41,6 +41,7 @@ from _base import (  # noqa: E402
     VAULT, SKIP_PARTS,
     parse_frontmatter, strip_auto_fields, reassemble_file,
     render_fields, get_crm_names,
+    is_inside_vault, iter_vault_markdown,
 )
 
 # Types that exist in frontmatter but should NEVER be auto-extracted.
@@ -149,9 +150,9 @@ def should_skip_path(path):
 
 
 def list_vault_files(type_filter=None):
-    """All .md files in vault, minus SKIP_PARTS folders."""
-    pattern = os.path.join(VAULT, "**", "*.md")
-    for fp in glob.glob(pattern, recursive=True):  # Rule 36
+    """All .md files in the vault, minus SKIP_PARTS folders and anything that
+    resolves outside the vault (a symlinked shared folder is never walked)."""
+    for fp in iter_vault_markdown():
         if should_skip_path(fp):
             continue
         yield fp
@@ -159,6 +160,12 @@ def list_vault_files(type_filter=None):
 
 def process_file(filepath, registry, context, dry_run=False, force=False):
     """Extract metadata for one file. Returns status string for logging."""
+    # Guard at the write site, so it holds for any caller and any file list.
+    # The fields written here are derived from the owner's private notes (dates,
+    # mention counts, floors) and must never land in, or be read from, a file
+    # that resolves outside the vault, such as a shared team or cloud folder.
+    if not is_inside_vault(filepath):
+        return "OUTSIDE_VAULT"
     try:
         with open(filepath, "r", encoding="utf-8") as f:
             content = f.read()
@@ -296,13 +303,13 @@ def main():
     counters = {
         "WROTE": 0, "DRY_OK": 0, "SKIP_ALREADY_TAGGED": 0,
         "NO_TYPE": 0, "NO_FRONTMATTER": 0, "INFRASTRUCTURE": 0,
-        "EXTRACTOR_SKIPPED": 0, "NO_FIELDS_EMITTED": 0,
+        "EXTRACTOR_SKIPPED": 0, "NO_FIELDS_EMITTED": 0, "OUTSIDE_VAULT": 0,
     }
     no_extractor_types = {}
     errors = []
 
     # Materialize file list (needed for sample + progress total). For very large vaults,
-    # this is one glob over .md files — cheap compared to per-file frontmatter parsing.
+    # this is one walk over .md files — cheap compared to per-file frontmatter parsing.
     all_files = list(list_vault_files())
 
     if args.sample is not None:
@@ -364,6 +371,8 @@ def main():
     print(f"  Infrastructure:      {counters['INFRASTRUCTURE']}")
     print(f"  No frontmatter:      {counters['NO_FRONTMATTER']}")
     print(f"  Extractor skipped:   {counters['EXTRACTOR_SKIPPED']}")
+    if counters["OUTSIDE_VAULT"]:
+        print(f"  ⚠ REFUSED, resolves outside the vault (symlink): {counters['OUTSIDE_VAULT']}")
 
     if no_extractor_types:
         print("\n  Types present but no extractor registered:")

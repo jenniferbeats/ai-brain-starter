@@ -92,6 +92,10 @@ SKIP_PARTS = {
 # Phase 20 team-vault pattern). glob's `**` follows those links, so without this
 # every personal-vault script would read — and metadata-extract would WRITE —
 # into the other vault, typically a live cloud-sync folder. Skip them by name.
+# That is a fast path, not the boundary: it covers only a folder linked in at the
+# vault root, and only by its name. is_inside_vault() below is what keeps the
+# extractors from reading or writing outside the vault, however deep the link
+# sits and whether a folder or a single note is the link.
 try:
     SKIP_PARTS |= {
         _e for _e in os.listdir(VAULT)
@@ -100,6 +104,42 @@ try:
     }
 except OSError:
     pass
+
+
+def is_inside_vault(path):
+    """True when `path` resolves inside the vault, following every symlink.
+
+    A folder or note linked in from outside the vault (a shared team or cloud
+    folder, another repo) resolves outside it. So a file is judged by where it
+    LIVES, never by what the link is called. VAULT is read at call time, so the
+    answer is for the vault the caller is operating on, and the vault root may
+    itself be reached through a link.
+
+    The extractors write fields derived from the owner's private notes (dates,
+    mention counts, the floors a person co-occurs with). A file that resolves
+    outside the vault must never be read or written by them: whoever else can
+    open that folder would be able to read those fields.
+    """
+    vault = os.path.realpath(VAULT)
+    real = os.path.realpath(path)
+    return real == vault or real.startswith(vault.rstrip(os.sep) + os.sep)
+
+
+def iter_vault_markdown(root=None):
+    """Every .md file under `root` (default: the vault) that resolves inside the vault.
+
+    os.walk(followlinks=False) never enters a symlinked folder, which a recursive
+    glob does. is_inside_vault() then drops a note that is itself a link pointing
+    out. Hidden folders and files are skipped, as glob's `**` skipped them.
+    """
+    for dirpath, dirnames, filenames in os.walk(root or VAULT, followlinks=False):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for name in filenames:
+            if name.endswith(".md") and not name.startswith("."):
+                path = os.path.join(dirpath, name)
+                if is_inside_vault(path):
+                    yield path
+
 
 SKIP_LINE_PREFIXES = (
     "#", "---", "**Gym", "**Sleep", "**RescueTime",
