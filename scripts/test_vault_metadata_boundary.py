@@ -1,0 +1,235 @@
+#!/usr/bin/env python3
+"""Regression: the vault metadata pipeline never reads or writes a note that
+resolves outside the vault, and never walks through a symlink to reach one.
+
+The failure this pins. A recursive `glob` (`**`) follows symlinks to
+directories, so a shared team or cloud folder linked into a vault was walked
+like any other folder, and the extractors wrote into the notes found there. The
+person extractor derives its fields (last journal date, mention count, floor
+co-occurrence) from the owner's private journals, so those fields landed in
+files that every other member of the shared folder can read. A folder linked in
+at the vault root was skipped by name; one linked in deeper, and a note that is
+itself a symlink, were not.
+
+What is asserted, at each place the pipeline touches a file:
+  - the walker (`list_vault_files`) and the insight index (`load_vault_index`)
+    yield only notes that live inside the vault;
+  - the writer (`process_file`) refuses a path that resolves outside the vault
+    BEFORE it opens it, whichever way the path reached it;
+  - the run summary counts and prints a refusal instead of filing it as an error.
+Negative controls keep the guard honest: a note inside the vault is still
+written, and so is one in a vault that is itself reached through a symlink. The
+positive control proves the fixture really does reproduce the hazard.
+
+Hermetic: a temp vault, a temp "shared" folder beside it, and a stand-in for the
+person extractor. Nothing here reads a real journal folder or a real vault.
+
+Auto-discovered by scripts/ci.sh via the scripts/test_*.py glob.
+Run: python3 scripts/test_vault_metadata_boundary.py
+"""
+import contextlib
+import glob
+import importlib.util
+import io
+import os
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+
+try:
+    import yaml  # noqa: F401 -- the extractors and the insight engine import it
+except ImportError:
+    if os.environ.get("GITHUB_ACTIONS"):
+        # CI installs PyYAML for this suite, so a runner without it is broken.
+        # Raising keeps a privacy regression test from passing by not running.
+        raise
+    print("SKIP: PyYAML is not installed (pip install pyyaml); "
+          "the vault boundary assertions did not run.")
+    sys.exit(0)
+
+sys.path.insert(0, os.path.join(HERE, "extractors"))
+
+import _base  # noqa: E402
+import _dispatcher  # noqa: E402
+
+_spec = importlib.util.spec_from_file_location(
+    "vault_insight_engine", os.path.join(HERE, "vault-insight-engine.py"))
+engine = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(engine)
+
+NOTE = "---\ntype: person\n---\n\nbody\n"
+
+
+def _read(path):
+    with open(path, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _write(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(text)
+
+
+class FakePersonExtractor:
+    """Stands in for extractors/person.py, so the test never scans a real
+    journal folder. Emits one field, the way the real one emits its counts."""
+    AUTO_FIELDS = ("person_journal_mention_count",)
+
+    @staticmethod
+    def extract(filepath, body, fm, context):
+        return _base.ExtractionResult(
+            {"person_journal_mention_count": 3}, ["person_journal_mention_count"])
+
+
+class VaultBoundary(unittest.TestCase):
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        # realpath: on macOS the temp dir sits behind the /var -> /private/var link.
+        self.root = os.path.realpath(tmp.name)
+        self.vault = os.path.join(self.root, "vault")
+        self.shared = os.path.join(self.root, "shared-folder")  # a team or cloud folder
+        self.sibling = os.path.join(self.root, "vault-copy")    # its name starts with the vault's
+
+        # Every place the pipeline reads the vault root goes through these three
+        # names; put them back after the test, before anything below can skip.
+        self.addCleanup(setattr, _base, "VAULT", _base.VAULT)
+        self.addCleanup(setattr, _dispatcher, "VAULT", _dispatcher.VAULT)
+        self.addCleanup(setattr, engine, "VAULT", engine.VAULT)
+
+        self.inside_note = os.path.join(self.vault, "👤 CRM", "Inside Person.md")
+        for path in (
+            self.inside_note,
+            os.path.join(self.vault, ".hidden", "Hidden Person.md"),  # hidden folder
+            os.path.join(self.vault, ".Dot Person.md"),               # hidden file
+            os.path.join(self.shared, "👥 CRM", "Team Person.md"),
+            os.path.join(self.shared, "Linked Person.md"),
+            os.path.join(self.shared, "nested", "Nested Person.md"),
+            os.path.join(self.sibling, "Sibling Person.md"),
+        ):
+            _write(path, NOTE)
+
+        # Four ways a note outside the vault shows up under a vault path.
+        self._link(self.shared, os.path.join(self.vault, "🤝 Shared"), True)
+        self._link(os.path.join(self.shared, "nested"),
+                   os.path.join(self.vault, "👤 CRM", "Team Share"), True)
+        self._link(os.path.join(self.shared, "Linked Person.md"),
+                   os.path.join(self.vault, "Linked Person.md"), False)
+        self._link(os.path.join(self.sibling, "Sibling Person.md"),
+                   os.path.join(self.vault, "Sibling Person.md"), False)
+        # In production a folder linked in at the vault ROOT is also skipped by
+        # name (SKIP_PARTS, computed once at import). This vault is built after
+        # import, so that skip cannot help here: containment has to hold alone.
+        self.outside_paths = (
+            os.path.join(self.vault, "🤝 Shared", "👥 CRM", "Team Person.md"),      # folder link, vault root
+            os.path.join(self.vault, "👤 CRM", "Team Share", "Nested Person.md"),  # folder link, nested
+            os.path.join(self.vault, "Linked Person.md"),                          # the note is the link
+            os.path.join(self.vault, "Sibling Person.md"),                         # target shares the vault's name as a prefix
+        )
+        self._point_at(self.vault)
+
+    def _link(self, target, link, is_dir):
+        try:
+            os.symlink(target, link, target_is_directory=is_dir)
+        except (OSError, NotImplementedError):
+            self.skipTest("this platform cannot create symlinks here")
+
+    def _point_at(self, vault):
+        _base.VAULT = _dispatcher.VAULT = engine.VAULT = vault
+
+    def _process(self, path, **kwargs):
+        return _dispatcher.process_file(
+            path, {"person": FakePersonExtractor}, {"crm_names": set()}, **kwargs)
+
+    @contextlib.contextmanager
+    def _spy_on_opens(self):
+        """Record every open() the dispatcher makes, passing each one through."""
+        with mock.patch.object(_dispatcher, "open", side_effect=open,
+                               create=True) as spy:
+            yield spy
+
+    def test_fixture_exposes_the_hazard(self):
+        """Positive control: a recursive glob really does reach the outside
+        notes through the links. If a future Python stopped following them this
+        goes red and says the fixture no longer reproduces the bug, instead of
+        letting every test below pass on nothing."""
+        found = set(glob.glob(os.path.join(self.vault, "**", "*.md"), recursive=True))
+        for path in self.outside_paths:
+            self.assertIn(path, found)
+
+    def test_walker_yields_only_notes_inside_the_vault(self):
+        found = sorted(os.path.basename(p) for p in _dispatcher.list_vault_files())
+        self.assertEqual(found, ["Inside Person.md"])
+
+    def test_insight_index_yields_only_notes_inside_the_vault(self):
+        found = sorted(os.path.basename(x["path"]) for x in engine.load_vault_index())
+        self.assertEqual(found, ["Inside Person.md"])
+
+    def test_walking_a_subfolder_stays_inside_the_vault(self):
+        crm = os.path.join(self.vault, "👤 CRM")
+        found = sorted(os.path.basename(p) for p in _base.iter_vault_markdown(crm))
+        self.assertEqual(found, ["Inside Person.md"])
+
+    def test_writer_refuses_a_path_that_resolves_outside_the_vault(self):
+        for path in self.outside_paths:
+            for kwargs in ({}, {"dry_run": True}, {"force": True}):
+                with self.subTest(path=path, **kwargs):
+                    before = _read(path)
+                    with self._spy_on_opens() as opened:
+                        status = self._process(path, **kwargs)
+                    self.assertEqual(status, "OUTSIDE_VAULT")
+                    self.assertEqual(opened.call_count, 0, "the refused path was opened")
+                    self.assertEqual(_read(path), before)
+
+    def test_writer_still_writes_a_note_inside_the_vault(self):
+        """Negative control: the guard does not block a legitimate write. The
+        spy sees this writer's opens, so the zero above is not vacuous."""
+        with self._spy_on_opens() as opened:
+            status = self._process(self.inside_note)
+        self.assertEqual(status, "WROTE")
+        self.assertTrue(opened.called)
+        self.assertIn("person_journal_mention_count: 3", _read(self.inside_note))
+
+    def test_a_vault_reached_through_a_symlink_keeps_working(self):
+        """Negative control: the vault root itself may be a link (a synced
+        folder, a relocated drive). Its own notes are inside it, not outside."""
+        alias = os.path.join(self.root, "vault-alias")
+        self._link(self.vault, alias, True)
+        self._point_at(alias)
+        found = {os.path.basename(p) for p in _dispatcher.list_vault_files()}
+        self.assertIn("Inside Person.md", found)
+        indexed = {os.path.basename(x["path"]) for x in engine.load_vault_index()}
+        self.assertIn("Inside Person.md", indexed)
+        self.assertEqual(
+            self._process(os.path.join(alias, "👤 CRM", "Inside Person.md")), "WROTE")
+
+    def test_summary_counts_and_prints_a_refusal(self):
+        """A path the walker cannot yield can still reach the writer through
+        another caller. The run must count it and say so, not file it as an
+        error or drop it."""
+        report = io.StringIO()
+        with mock.patch.object(_dispatcher, "discover_extractors",
+                               return_value={"person": FakePersonExtractor}), \
+                mock.patch.object(_dispatcher, "get_crm_names", return_value=set()), \
+                mock.patch.object(_dispatcher, "list_vault_files",
+                                  return_value=iter([self.outside_paths[1], self.inside_note])), \
+                mock.patch.object(sys, "argv", ["vault-metadata-extract"]), \
+                contextlib.redirect_stdout(report):
+            _dispatcher.main()
+        lines = report.getvalue().splitlines()
+        refused = [line for line in lines if "REFUSED" in line]
+        self.assertEqual(len(refused), 1, report.getvalue())
+        self.assertTrue(refused[0].rstrip().endswith(": 1"), refused[0])
+        self.assertFalse([line for line in lines if line.strip().startswith("Errors:")],
+                         report.getvalue())
+        # The run went on past the refusal, and only the in-vault note changed.
+        self.assertIn("person_journal_mention_count: 3", _read(self.inside_note))
+        self.assertNotIn("person_journal_mention_count", _read(self.outside_paths[1]))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)
