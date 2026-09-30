@@ -153,6 +153,19 @@ class VaultBoundary(unittest.TestCase):
                                create=True) as spy:
             yield spy
 
+    @contextlib.contextmanager
+    def _record_listings(self):
+        """Yield the list of every directory os.scandir is asked to list."""
+        listed = []
+        real_scandir = os.scandir
+
+        def record(path):
+            listed.append(os.fsdecode(path))
+            return real_scandir(path)
+
+        with mock.patch.object(os, "scandir", side_effect=record):
+            yield listed
+
     def test_fixture_exposes_the_hazard(self):
         """Positive control: a recursive glob really does reach the outside
         notes through the links. If a future Python stopped following them this
@@ -175,17 +188,33 @@ class VaultBoundary(unittest.TestCase):
         found = sorted(os.path.basename(p) for p in _base.iter_vault_markdown(crm))
         self.assertEqual(found, ["Inside Person.md"])
 
+    def test_walking_a_folder_outside_the_vault_yields_nothing_and_stops(self):
+        with self._record_listings() as listed:
+            found = list(_base.iter_vault_markdown(self.shared))
+        self.assertEqual(found, [])
+        self.assertEqual(listed, [self.shared])  # it did not go on into the folders below
+
+    def test_walk_agrees_with_the_per_note_check(self):
+        """The walker resolves each folder once instead of each note. It must
+        still give exactly the answer is_inside_vault() gives note by note,
+        including for a note linked to another note inside the vault."""
+        alias = os.path.join(self.vault, "Alias Person.md")
+        self._link(self.inside_note, alias, False)
+        expected = []
+        for dirpath, dirnames, filenames in os.walk(self.vault):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            for name in filenames:
+                path = os.path.join(dirpath, name)
+                if (name.endswith(".md") and not name.startswith(".")
+                        and _base.is_inside_vault(path)):
+                    expected.append(path)
+        self.assertIn(alias, expected)  # a link that stays inside the vault is kept
+        self.assertEqual(sorted(_base.iter_vault_markdown()), sorted(expected))
+
     def test_walker_never_lists_a_linked_folder(self):
         """Filtering the results is not enough: a shared folder can be huge, or
         sit on a stalled mount, so the walk must not go into it at all."""
-        listed = []
-        real_scandir = os.scandir
-
-        def record(path):
-            listed.append(os.fsdecode(path))
-            return real_scandir(path)
-
-        with mock.patch.object(os, "scandir", side_effect=record):
+        with self._record_listings() as listed:
             list(_dispatcher.list_vault_files())
         self.assertIn(self.vault, listed)  # the recorder does see the walk
         linked = (os.path.join(self.vault, "🤝 Shared"),
