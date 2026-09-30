@@ -106,6 +106,15 @@ except OSError:
     pass
 
 
+def _resolves_inside(real, vault_real):
+    """True when an already-resolved path is the vault or lies under it.
+
+    Compared on a path boundary, so a sibling folder whose name merely starts
+    with the vault's name is outside.
+    """
+    return real == vault_real or real.startswith(vault_real.rstrip(os.sep) + os.sep)
+
+
 def is_inside_vault(path):
     """True when `path` resolves inside the vault, following every symlink.
 
@@ -120,25 +129,34 @@ def is_inside_vault(path):
     outside the vault must never be read or written by them: whoever else can
     open that folder would be able to read those fields.
     """
-    vault = os.path.realpath(VAULT)
-    real = os.path.realpath(path)
-    return real == vault or real.startswith(vault.rstrip(os.sep) + os.sep)
+    return _resolves_inside(os.path.realpath(path), os.path.realpath(VAULT))
 
 
 def iter_vault_markdown(root=None):
     """Every .md file under `root` (default: the vault) that resolves inside the vault.
 
     os.walk(followlinks=False) never enters a symlinked folder, which a recursive
-    glob does. is_inside_vault() then drops a note that is itself a link pointing
-    out. Hidden folders and files are skipped, as glob's `**` skipped them.
+    glob does, and a note that is itself a link is resolved, so one pointing out
+    is dropped. The answer is the one is_inside_vault() gives note by note. It is
+    reached more cheaply: realpath stats every component of a path, which adds up
+    over a large or cloud-mounted vault, so the vault and each folder are resolved
+    once, and a note only when it is a link. Resolving each folder also keeps a
+    `root` outside the vault from yielding anything, and ends that walk at once.
+    Hidden folders and files are skipped, as glob's `**` skipped them.
     """
+    vault_real = os.path.realpath(VAULT)
     for dirpath, dirnames, filenames in os.walk(root or VAULT, followlinks=False):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        if not _resolves_inside(os.path.realpath(dirpath), vault_real):
+            dirnames[:] = []
+            continue
         for name in filenames:
             if name.endswith(".md") and not name.startswith("."):
                 path = os.path.join(dirpath, name)
-                if is_inside_vault(path):
-                    yield path
+                if os.path.islink(path) and not _resolves_inside(
+                        os.path.realpath(path), vault_real):
+                    continue
+                yield path
 
 
 SKIP_LINE_PREFIXES = (
