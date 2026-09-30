@@ -251,4 +251,11 @@ class VaultBoundary(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    # Windows cp1252-console safety (#313): the fixture paths are emoji-named, and
+    # a failing assertion prints them. Force UTF-8 so that can't crash the run.
+    for _stream in (sys.stdout, sys.stderr):
+        try:
+            _stream.reconfigure(encoding="utf-8")  # Python 3.7+
+        except (AttributeError, ValueError):
+            pass
     unittest.main(verbosity=2)
