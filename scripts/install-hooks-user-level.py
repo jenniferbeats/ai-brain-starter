@@ -357,6 +357,9 @@ ABS_OWNED_BASENAMES = {
     # above: unowned means verify_paths_on_disk() never looks at them, and a
     # never-deployed hook then reports as a clean install forever.
     "retry-budget.py", "validate-mcp-json.py", "vault-context.py",
+    # Owned for the same reason: unowned means verify_paths_on_disk() never
+    # looks at it, and a never-deployed guard reports as a clean install forever.
+    "check-zsh-silent-idioms.py",
 }
 
 # Hooks that hooks.json invokes from ~/.claude/hooks/ and that THIS INSTALLER is
@@ -403,6 +406,9 @@ HOME_HOOKS_INSTALLER_DEPLOYS = {
     "block-scratchpad-cross-agent-clobber.py",
                                     # PreToolUse(Bash,Write|Edit) shared-scratchpad
                                     # cross-agent clobber blocker
+    "check-zsh-silent-idioms.py",   # PreToolUse(Bash) bash idioms that silently do the
+                                    # wrong thing under zsh: unbraced `$VAR:path` in a
+                                    # git read, unsplit `$VAR` in `set --` / `for X in`
 }
 
 # Package files under hooks/_lib/ that a HOME_HOOKS_INSTALLER_DEPLOYS hook
