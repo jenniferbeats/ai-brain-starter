@@ -48,7 +48,10 @@ DAY_BOUNDARY_HOUR = 3                        # 3:45am boundary: pre-3:45 belongs
 DAY_BOUNDARY_MIN = 45
 MAX_GAP_DAYS = 14
 
-CONFIG = os.path.join(META, "journal-config.md")
+# Meta/config/ is preferred; Meta/journal-config.md keeps older vaults working.
+CONFIG = next((p for p in (os.path.join(META, "config", "journal-config.md"),
+                           os.path.join(META, "journal-config.md")) if os.path.exists(p)),
+              os.path.join(META, "config", "journal-config.md"))
 CAPTURES = os.path.join(META, "Session Captures.md")
 EMAIL_DIGEST = os.path.join(META, "Email Needs You.md")
 MARKER_DIR = os.path.join(META, ".journal-context")

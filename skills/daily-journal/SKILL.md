@@ -173,9 +173,9 @@ Read the ⭐ FAMILY / PARTNER threads BEFORE the work chatter — that is the pa
 
 Do NOT ask the opener until the preflight ran AND every MCP pull it listed is done. A contextless journal — no calendar, no messages, no activity — is the exact failure this kills (2026-07-07 incident: the model skipped Step 0 and the user had to ask "why didn't you pull everything?"). If a fetcher isn't installed on this vault, the preflight says so and you proceed honestly with what it got — but you STILL run it. At save time the entry frontmatter MUST carry a `context_sources:` block naming every source folded in; `warn-journal-saved-without-context.py` fires if a journal is written for a day whose preflight marker is missing.
 
-**0-pre. Read the journal config (mandatory).** Look for `⚙️ Meta/journal-config.md` (or `Meta/journal-config.md` if the vault doesn't use emoji-prefixed Meta). Parse the `data_sources:` frontmatter block, and read `filename_format:` (`descriptive` | `date` | `date-title`; default `descriptive` when absent or the file doesn't exist yet) — apply it at every save (Steps 1.5 and 7).
+**0-pre. Read the journal config (mandatory).** Look for `⚙️ Meta/config/journal-config.md` first, then `⚙️ Meta/journal-config.md` (or the same two paths under `Meta/` if the vault doesn't use emoji-prefixed Meta). Use the first one that exists; never create a second copy. Parse the `data_sources:` frontmatter block, and read `filename_format:` (`descriptive` | `date` | `date-title`; default `descriptive` when absent or the file doesn't exist yet) — apply it at every save (Steps 1.5 and 7).
 
-If the file does not exist, copy `templates/journal-config.md` from this skill's repo into the vault and ask the user once:
+If neither file exists, copy `templates/journal-config.md` from this skill's repo into the vault's `Meta/config/` folder (create it if needed) and ask the user once:
 
 > "I created `journal-config.md`. Cross-platform pulls (iMessage, WhatsApp, Calendar) are off by default for privacy. Want to turn any on for richer context? You can change later by editing that file."
 
@@ -347,7 +347,7 @@ Based on their answer, ask follow-up questions. Be curious, not clinical. Push g
 **Capture:** Include the three verbatim in the `## Journal` body in the user's voice AND in a `gratitudes:` frontmatter array (queryable for weekly/monthly reviews and pattern analysis).
 
 **Stage to gratitude group (configurable per vault):**
-- Look for `gratitude_group:` in `Meta/journal-config.md` (or your vault's equivalent). Expected schema:
+- Look for `gratitude_group:` in the journal config found at Step 0-pre (`Meta/config/journal-config.md` or `Meta/journal-config.md`). Expected schema:
   ```yaml
   gratitude_group:
     channel: imessage | whatsapp | none   # default: none
@@ -677,7 +677,7 @@ deep_work: X                # blocks completed today
 # rt_distracting_h: X.X
 ---
 
-## Today (auto-pulled per config — see ⚙️ Meta/journal-config.md)
+## Today (auto-pulled per config — see the journal config from Step 0-pre)
 [ONE dense paragraph synthesized from the data sources enabled in journal-config.md. Concrete: PR numbers, test count deltas, file counts, hour totals, named events, named people, on-screen + off-screen events. Inventory shape, not narrative. Wikilink relevant people/projects/concepts so the graph picks them up. This is the "what happened today" anchor future-rereads use to date-stamp the entry. If `todays_activity` is off in config, omit this section entirely. If a section of activity was empty (no commits, no calendar events, etc.), say so explicitly rather than skipping; the absence is signal too.]
 
 ## Journal — [user]'s voice
