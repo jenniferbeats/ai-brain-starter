@@ -29,8 +29,9 @@
   Stop with:
     launchctl unload ~/Library/LaunchAgents/com.abs.vault-daily-maintenance.plist
 
-  Linux users: there is no launchd. Use cron instead -
-    30 4 * * *  /bin/bash {{REPO_ROOT}}/scripts/vault-daily-maintenance.sh --vault-root {{VAULT_ROOT}} >> {{LOG_DIR}}/vault-daily-maintenance.out.log 2>&1
+  Linux users: there is no launchd. Use cron instead (XML forbids a double
+  dash inside a comment, so the vault-root flag is written in its env form) -
+    30 4 * * *  VAULT_ROOT={{VAULT_ROOT}} /bin/bash {{REPO_ROOT}}/scripts/vault-daily-maintenance.sh >> {{LOG_DIR}}/vault-daily-maintenance.out.log 2>&1
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

@@ -6,7 +6,7 @@
   the PREVENTION half of STALE-BARE-CHECKOUT-READ (pairs with the read-time guard
   hooks/warn-stale-dev-checkout.py, which DETECTS a stale bare hub).
 
-  Runs scripts/dev-hub-refresh.py --apply every 6h (and once at load): FETCH-FIRST,
+  Runs scripts/dev-hub-refresh.py in apply mode every 6h (and once at load): FETCH-FIRST,
   then fast-forward any hub that is CLEAN, on its default branch, behind, with no
   local commits (a GUARANTEED fast-forward, reflog-reversible), and SURFACE the rest
   (dirty / feature-branch / detached / diverged) into
