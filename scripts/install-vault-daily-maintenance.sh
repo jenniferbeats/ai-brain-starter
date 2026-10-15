@@ -114,6 +114,7 @@ sed \
     -e "s|{{REPO_ROOT}}|$REPO_ROOT|g" \
     -e "s|{{VAULT_ROOT}}|$VAULT_ROOT|g" \
     -e "s|{{LOG_DIR}}|$LOG_DIR|g" \
+    -e "s|{{SKIP_STEPS}}|${ABS_SKIP_STEPS:-}|g" \
     "$TEMPLATE" > "$TARGET_FILE"
 
 say "[install-vault-daily-maintenance] wrote $TARGET_FILE"

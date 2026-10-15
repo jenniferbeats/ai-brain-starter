@@ -235,6 +235,11 @@ run() {
   # and REMEMBERS a non-zero status for the summary + exit code.
   local label="$1"; shift
   local out rc
+  # ABS_SKIP_STEPS: comma-separated step labels the user turned off
+  # (e.g. "drift-detection,check-rule-conflicts"). Skipped, not failed.
+  case ",${ABS_SKIP_STEPS:-}," in
+    *",$label,"*) log "[$label] SKIPPED - listed in ABS_SKIP_STEPS"; return 0 ;;
+  esac
   out=$(nice -n 10 "$@" 2>&1); rc=$?
   printf '%s\n' "$out" | tail -3
   log "[$label] rc=$rc :: $(printf '%s\n' "$out" | tail -1)"

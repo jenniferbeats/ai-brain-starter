@@ -23,6 +23,9 @@
                      example: /Users/me/Documents/MyVault
     {{LOG_DIR}}      absolute directory for stdout/stderr logs
                      example: /Users/me/.local/state/ai-brain-starter
+    {{SKIP_STEPS}}   comma-separated step labels to turn off (may be empty);
+                     the installer fills it from ABS_SKIP_STEPS
+                     example: drift-detection,check-rule-conflicts
 
   After the file lands at ~/Library/LaunchAgents/, run:
     launchctl load ~/Library/LaunchAgents/com.abs.vault-daily-maintenance.plist
@@ -55,6 +58,9 @@
     <dict>
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <!-- Steps to skip, comma-separated; filled from ABS_SKIP_STEPS at install time. -->
+        <key>ABS_SKIP_STEPS</key>
+        <string>{{SKIP_STEPS}}</string>
     </dict>
 
     <key>StartCalendarInterval</key>

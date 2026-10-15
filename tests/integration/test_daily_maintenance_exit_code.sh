@@ -165,6 +165,24 @@ if [ -f "$tmp/home4/.claude/state/vault-daily-maintenance-last.json" ]; then
   ok "state file separates failed_steps from an empty failed_critical"
 fi
 
+# CASE 5 -- ABS_SKIP_STEPS turns a leg off: the listed leg never runs and is not
+# counted as failed, while a leg whose label only CONTAINS a listed name runs.
+HARNESS_CRITICAL='"skipped-leg"'
+build_harness <<'STEPS'
+ABS_SKIP_STEPS="other-leg,skipped-leg"
+run "skipped-leg" sh -c 'echo skipped-leg-ran; exit 1'
+run "skipped-leg-twin" sh -c 'echo twin-ran'
+STEPS
+set +e
+run_sandboxed "$tmp/home5" bash "$tmp/h.sh" > "$tmp/o5" 2>&1
+rc5=$?
+set -e
+[ "$rc5" -eq 0 ] || fail "a skipped critical leg exited $rc5 -- skipped must not count as failed"
+grep -q 'skipped-leg-ran' "$tmp/o5" && fail "a leg listed in ABS_SKIP_STEPS still ran"
+grep -q '\[skipped-leg\] SKIPPED' "$tmp/o5" || fail "the skip is not logged"
+grep -q 'twin-ran' "$tmp/o5" || fail "a leg whose label only contains a listed name was skipped"
+ok "ABS_SKIP_STEPS skips exactly the listed legs (exit $rc5)"
+
 if [ "$FAILED" -ne 0 ]; then
   echo "test_daily_maintenance_exit_code: FAILED" >&2
   exit 1

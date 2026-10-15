@@ -70,7 +70,7 @@ TEMPLATE_NAMES=(
 TEMPLATE_PLACEHOLDERS=(
   "REPO_ROOT VAULT_ROOT LOG_DIR"
   "REPO_ROOT LOG_DIR"
-  "REPO_ROOT VAULT_ROOT LOG_DIR"
+  "REPO_ROOT VAULT_ROOT LOG_DIR SKIP_STEPS"
 )
 
 i=0
@@ -141,6 +141,7 @@ FAKE_VALUES = {
     "REPO_ROOT": "/Users/tester/ai-brain-starter",
     "VAULT_ROOT": "/Users/tester/MyVault",
     "LOG_DIR": "/Users/tester/.local/state/ai-brain-starter",
+    "SKIP_STEPS": "drift-detection,check-rule-conflicts",
 }
 rendered = raw
 for ph in placeholders:
