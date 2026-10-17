@@ -279,6 +279,7 @@ INTEGRATION_TESTS=(
   test_verify_cascade_failsafe
   test_verify_cascade_repo_aware_vault
   test_aggregator_vault_root_guard
+  test_aggregators_plain_meta_vault
   test_discoverability_partition
   test_stranded_session_artifacts_watchdog
   test_offmain_strand_guard

@@ -35,8 +35,8 @@ trap 'rm -rf "$TMP"' EXIT
 SENTINEL="SENTINEL_DO_NOT_CLOBBER_$$"
 pass() { echo "PASS: $1"; }
 fail() { echo "FAIL: $1" >&2; [ -n "${2:-}" ] && sed 's/^/  /' "$2" >&2; exit 1; }
-newest_bak() {  # dir stem  ->  path of newest "<stem>.bak-*.md", or ""
-  find "$1" -maxdepth 1 -name "$2.bak-*.md" -print 2>/dev/null | sort | tail -1
+newest_bak() {  # dir name  ->  path of newest "<name>.bak-*", or ""
+  find "$1" -maxdepth 1 -name "$2.bak-*" -print 2>/dev/null | sort | tail -1
 }
 
 # --- Build two fake vaults -------------------------------------------------
@@ -131,7 +131,7 @@ pass "decision-outcome-check leaves a foreign (mismatched VAULT_ROOT) vault unto
 before="$(cat "$A_LAST")"
 make_session "$TMP/vault_a" a2          # change the input so the re-run differs
 python3 "$A_SESSIONS" >/dev/null 2>/dev/null   # auto-detect, own vault
-bak="$(newest_bak "$A_META" "Last Session")"
+bak="$(newest_bak "$A_META" "Last Session.md")"
 [ -n "$bak" ] || fail "aggregate-sessions did not back up Last Session.md before overwriting"
 [ "$(cat "$bak")" = "$before" ] || fail "backup does not contain the prior good content"
 pass "aggregate-sessions backs up the prior Last Session.md before overwriting"
@@ -140,7 +140,7 @@ pass "aggregate-sessions backs up the prior Last Session.md before overwriting"
 # Proves the unforced protection above is real (the env var CAN redirect when
 # opted in) AND that even a forced cross-vault write preserves the prior file.
 VAULT_ROOT_FORCE=1 VAULT_ROOT="$B_META/.." python3 "$A_SESSIONS" >/dev/null 2>/dev/null
-b_bak="$(newest_bak "$B_META" "Last Session")"
+b_bak="$(newest_bak "$B_META" "Last Session.md")"
 [ -n "$b_bak" ] || fail "forced cross-vault run did not back up the target vault's Last Session.md"
 grep -q "$SENTINEL" "$b_bak" || fail "forced-run backup does not preserve the prior sentinel content"
 grep -q "<!-- aggregate-sessions:BEGIN -->" "$B_META/Last Session.md" \
