@@ -13,6 +13,11 @@ ROOT="$(mktemp -d)"
 trap 'rm -rf "$ROOT"' EXIT
 export VAULT_BACKUP_CONF="$ROOT/conf.json"
 export VAULT_BACKUP_MARKER="$ROOT/marker"
+# Time Machine is machine-wide: on a Mac that has it configured, the detector
+# reports the "unbacked" fixture below as BACKED_UP:timemachine and the 4b
+# negative control fails for a reason that has nothing to do with `status`.
+# Same isolation as test-vault-backup-guard.sh.
+export VAULT_BACKUP_SKIP_TIMEMACHINE=1
 fails=0
 pass() { echo "PASS  $1"; }
 fail() { echo "FAIL  $1"; fails=$((fails+1)); }
