@@ -26,6 +26,11 @@
     {{SKIP_STEPS}}   comma-separated step labels to turn off (may be empty);
                      the installer fills it from ABS_SKIP_STEPS
                      example: drift-detection,check-rule-conflicts
+    {{RECONCILE_EXTRA_PATHS}}  more vault-relative paths the nightly sweep
+                     commits, colon-separated (may be empty); filled from
+                     ABS_RECONCILE_EXTRA_PATHS. example: Meta/Agent Memory
+    {{RECONCILE_PUSH}}  1 to push after the sweep commits, empty or 0 not to;
+                     filled from ABS_RECONCILE_PUSH
 
   After the file lands at ~/Library/LaunchAgents/, run:
     launchctl load ~/Library/LaunchAgents/com.abs.vault-daily-maintenance.plist
@@ -61,6 +66,11 @@
         <!-- Steps to skip, comma-separated; filled from ABS_SKIP_STEPS at install time. -->
         <key>ABS_SKIP_STEPS</key>
         <string>{{SKIP_STEPS}}</string>
+        <!-- Extra paths for the nightly commit, and whether to push; see the header. -->
+        <key>ABS_RECONCILE_EXTRA_PATHS</key>
+        <string>{{RECONCILE_EXTRA_PATHS}}</string>
+        <key>ABS_RECONCILE_PUSH</key>
+        <string>{{RECONCILE_PUSH}}</string>
     </dict>
 
     <key>StartCalendarInterval</key>

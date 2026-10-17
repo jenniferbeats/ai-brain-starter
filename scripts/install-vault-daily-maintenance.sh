@@ -115,6 +115,8 @@ sed \
     -e "s|{{VAULT_ROOT}}|$VAULT_ROOT|g" \
     -e "s|{{LOG_DIR}}|$LOG_DIR|g" \
     -e "s|{{SKIP_STEPS}}|${ABS_SKIP_STEPS:-}|g" \
+    -e "s|{{RECONCILE_EXTRA_PATHS}}|${ABS_RECONCILE_EXTRA_PATHS:-}|g" \
+    -e "s|{{RECONCILE_PUSH}}|${ABS_RECONCILE_PUSH:-}|g" \
     "$TEMPLATE" > "$TARGET_FILE"
 
 say "[install-vault-daily-maintenance] wrote $TARGET_FILE"

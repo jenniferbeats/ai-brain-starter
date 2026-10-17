@@ -275,11 +275,36 @@ if [ -d "$VAULT/.git" ] || git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; 
              "$META_DIR/Session Captures.md"; do
       [ -e "$p" ] && PATHS+=("$p")
     done
+    # ABS_RECONCILE_EXTRA_PATHS: more vault-relative paths the sweep also commits,
+    # colon-separated because folder names may hold spaces or commas
+    # (e.g. "Meta/Agent Memory", where agents write memories and rarely commit).
+    if [ -n "${ABS_RECONCILE_EXTRA_PATHS:-}" ]; then
+      IFS=':' read -r -a EXTRA_PATHS <<< "$ABS_RECONCILE_EXTRA_PATHS"
+      for p in "${EXTRA_PATHS[@]}"; do
+        [ -n "$p" ] && [ -e "$VAULT/$p" ] && PATHS+=("$VAULT/$p")
+      done
+    fi
     if [ ${#PATHS[@]} -gt 0 ]; then
+      # `--only` and the path-scoped diff keep a sibling session's staged work
+      # out of this commit: a bare `git commit` takes the ENTIRE index (see
+      # vault-safe-commit.sh for the measured case).
       ( cd "$VAULT" && git add -- "${PATHS[@]}" 2>>"$LOG" \
-          && { git diff --cached --quiet \
-               || git commit -m "maint: reconcile deferred session-close $(date +%Y-%m-%d)" >/dev/null 2>>"$LOG"; } )
+          && { git diff --cached --quiet -- "${PATHS[@]}" \
+               || git commit --only -m "maint: reconcile deferred session-close $(date +%Y-%m-%d)" \
+                    -- "${PATHS[@]}" >/dev/null 2>>"$LOG"; } )
       log "[reconcile-commit] staged ${#PATHS[@]} close-artifact path(s)"
+    fi
+    # ABS_RECONCILE_PUSH=1: push the branch afterwards, so the sweep's commits
+    # (and any other local ones) do not sit on one machine. Never rebases or
+    # forces: a rejected push is logged and left for a person.
+    if [ "${ABS_RECONCILE_PUSH:-0}" = "1" ] && git -C "$VAULT" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then
+      if [ -n "$(git -C "$VAULT" rev-list '@{u}..HEAD' 2>/dev/null)" ]; then
+        if git -C "$VAULT" push --quiet 2>>"$LOG"; then
+          log "[reconcile-push] pushed"
+        else
+          log "[reconcile-push] FAILED - push rejected; left for a person (no rebase, no force)"
+        fi
+      fi
     fi
   else
     log "[reconcile-commit] SKIPPED - git index.lock held (or git dir unresolvable) after ${VAULT_GIT_LOCK_MAX_WAIT:-60}s"
