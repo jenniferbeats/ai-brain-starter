@@ -346,6 +346,7 @@ INTEGRATION_TESTS=(
   test_vault_lock_separated_gitdir
   test_cloud_sync_guard
   test_daily_maintenance_exit_code
+  test_reconcile_extra_paths_and_push
   test_cloud_safe_file_walkers
   test_delegated_task_needs_source
   test_cloud_sync_offer
