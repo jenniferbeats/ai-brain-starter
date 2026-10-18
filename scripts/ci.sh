@@ -202,15 +202,31 @@ if [ -z "$(git config user.email 2>/dev/null || true)" ]; then
   export GIT_COMMITTER_NAME="ci" GIT_COMMITTER_EMAIL="ci@example.com"
 fi
 
-# PyYAML, in CI only. The metadata extractors and the insight engine `import
-# yaml`, and test_extractors_localized_vault runs them end to end; setup-python
-# ships without PyYAML, so on the runner that suite would SKIP forever. On a
-# contributor's machine nothing is installed: the test finds an interpreter that
-# has yaml or says SKIP, and running the extractors already required it anyway.
+# PyYAML. The metadata extractors and the insight engine `import yaml`, and
+# test_extractors_localized_vault runs them end to end; setup-python ships
+# without PyYAML, so on the runner that suite would SKIP forever.
 if [ -n "${GITHUB_ACTIONS:-}" ] && ! python3 -c "import yaml" >/dev/null 2>&1; then
   python3 -m pip install --user --quiet pyyaml >/dev/null 2>&1 \
     || python3 -m pip install --quiet pyyaml >/dev/null 2>&1 \
     || echo "    (PyYAML install failed; test_extractors_localized_vault will SKIP)"
+fi
+
+# On a local machine whose python3 lacks PyYAML, test_untrusted_ingest_guard
+# FAILS (it does not skip), so the gate could never go green there. The
+# machine's Python is left alone: PyYAML goes into a cache folder of this repo's
+# own, one per Python version, and reaches every suite through PYTHONPATH (an
+# exported var survives run_sandboxed, like PYTHONUSERBASE below). A Homebrew
+# Python refuses `pip install --user` (PEP 668); `--target` is not refused.
+if [ -z "${GITHUB_ACTIONS:-}" ] && ! python3 -c "import yaml" >/dev/null 2>&1; then
+  _PYYAML_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/ai-brain-starter/pyyaml-py$(python3 -c 'import sys; print("%d.%d" % sys.version_info[:2])')"
+  [ -d "$_PYYAML_DIR/yaml" ] \
+    || python3 -m pip install --quiet --target "$_PYYAML_DIR" pyyaml >/dev/null 2>&1 \
+    || echo "    (PyYAML install into $_PYYAML_DIR failed; the suites that need yaml will fail)"
+  if [ -d "$_PYYAML_DIR/yaml" ]; then
+    PYTHONPATH="$_PYYAML_DIR${PYTHONPATH:+:$PYTHONPATH}"
+    export PYTHONPATH
+    echo "==> PyYAML from $_PYYAML_DIR (python3 has none; the machine's Python is untouched)"
+  fi
 fi
 
 # Pinned HERE (before HOME goes decoy) and exported: run_sandboxed swaps
