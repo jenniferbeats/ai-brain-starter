@@ -250,6 +250,21 @@ run() {
   return 0
 }
 
+# run_graph_cache_prune <prune-script> - prunes stale graph-cache entries, or
+# logs a SKIP when the vault holds no graph cache. A vault that never built a
+# graph has nothing to prune; the prune script exits 1 on it ("no cache dir
+# found"), and counting that as a failed step every night made the summary's
+# real failures read as background. With a cache at the vault root or under the
+# resolved Meta folder the leg runs as before, and still fails loud if the prune
+# script cannot find it.
+run_graph_cache_prune() {
+  if [ -d "$VAULT/graphify-out/cache" ] || [ -d "$META_DIR/graphify-out/cache" ]; then
+    run "graphify-cache-prune" /usr/bin/env python3 "$1" . --vault-root "$VAULT"
+  else
+    log "[graphify-cache-prune] SKIPPED - no graphify-out/cache in this vault, nothing to prune"
+  fi
+}
+
 # === RECONCILE (data safety): aggregators + commit deferred close artifacts ===
 AGG_SESSIONS="$SCRIPT_DIR/aggregate-sessions.py"
 AGG_DECISIONS="$SCRIPT_DIR/aggregate-decisions.py"
@@ -409,10 +424,9 @@ else
   #    the WHOLE vault ('.') on purpose: the tool drops cache keys that match no
   #    current file in the corpus, so the widest corpus is the SAFEST one — it
   #    can only under-prune, never delete a key some other corpus still uses.
-  #    No-ops (rc!=0, logged) when the vault has no graph cache at all.
+  #    A vault with no graph cache at all is a logged SKIP, not a failed step.
   GCACHE="$SCRIPT_DIR/graphify_prune_stale_cache.py"
-  [ -f "$GCACHE" ] && run "graphify-cache-prune" \
-      /usr/bin/env python3 "$GCACHE" . --vault-root "$VAULT"
+  [ -f "$GCACHE" ] && run_graph_cache_prune "$GCACHE"
 
   # 3. Code-repo branch/worktree/stash drift. --apply reaps ONLY what is
   #    provably preserved on a remote; un-backed-up work is surfaced, never

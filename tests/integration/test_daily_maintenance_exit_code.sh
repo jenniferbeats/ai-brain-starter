@@ -183,6 +183,47 @@ grep -q '\[skipped-leg\] SKIPPED' "$tmp/o5" || fail "the skip is not logged"
 grep -q 'twin-ran' "$tmp/o5" || fail "a leg whose label only contains a listed name was skipped"
 ok "ABS_SKIP_STEPS skips exactly the listed legs (exit $rc5)"
 
+# CASE 6 -- a vault with no graph cache has nothing to prune: the prune leg is a
+# logged SKIP, not a failed step. Before this, graphify_prune_stale_cache.py
+# exited 1 ("no cache dir found") and every night's summary listed
+# graphify-cache-prune as a non-zero step on a vault that never built a graph,
+# which is how a real failure in the same summary turns into background.
+# CONTROL: with a cache present the leg still runs -- the gate must not simply
+# switch the prune off.
+prune_block="$(awk '/^run_graph_cache_prune\(\) \{/,/^\}/' "$TARGET")"
+if ! printf '%s' "$prune_block" | grep -q 'graphify-out/cache'; then
+  fail "could not lift run_graph_cache_prune() -- the graph-cache gate moved or is gone"
+else
+  printf 'print("prune-ran")\n' > "$tmp/fake-prune.py"
+  for layout in none root meta; do
+    v="$tmp/vault-$layout"; mkdir -p "$v/Meta"
+    case "$layout" in
+      root) mkdir -p "$v/graphify-out/cache" ;;
+      meta) mkdir -p "$v/Meta/graphify-out/cache" ;;
+    esac
+    HARNESS_CRITICAL=''
+    build_harness <<STEPS
+VAULT="$v"; META_DIR="$v/Meta"
+$prune_block
+run_graph_cache_prune "$tmp/fake-prune.py"
+STEPS
+    set +e
+    run_sandboxed "$tmp/home6-$layout" bash "$tmp/h.sh" > "$tmp/o6-$layout" 2>&1
+    set -e
+    case "$layout" in
+      none)
+        grep -q 'prune-ran' "$tmp/o6-none" && fail "prune ran on a vault with no graph cache"
+        grep -q '\[graphify-cache-prune\] SKIPPED' "$tmp/o6-none" || fail "the no-cache skip is not logged"
+        grep -q 'graphify-cache-prune(rc=' "$tmp/o6-none" && fail "a vault with no graph cache still counts the prune as a failed step"
+        ;;
+      *)
+        grep -q 'prune-ran' "$tmp/o6-$layout" || fail "prune did NOT run with a $layout graph cache present"
+        ;;
+    esac
+  done
+  ok "graph-cache prune: skipped without a cache, runs with a root or Meta cache"
+fi
+
 if [ "$FAILED" -ne 0 ]; then
   echo "test_daily_maintenance_exit_code: FAILED" >&2
   exit 1
