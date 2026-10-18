@@ -18,9 +18,13 @@
 # ENTIRE index, so a sibling session's staged file rode along under the sweep's
 # message. It now commits `--only` the named paths.
 #
+# It also pins provenance: the sweep commit ends with a `Host:` trailer naming
+# the machine that ran it (`hostname -s`), so two machines running the same
+# maintenance can be told apart. No `Assisted-by:`: no agent or model took part.
+#
 # NEGATIVE CONTROL: against the pre-change script, case 1 fails (the extra path
-# is not committed), case 2 fails (the foreign staged file is swept in) and
-# case 3 fails (nothing is pushed).
+# is not committed), case 2 fails (the foreign staged file is swept in),
+# case 3 fails (nothing is pushed) and case 3b fails (no `Host:` trailer).
 #
 # Self-contained: temp vault + bare remote + temp HOME, cleaned on exit.
 # NEVER touches a real vault. Exit 0 = pass.
@@ -95,6 +99,13 @@ ok "the sweep commits only its own paths"
 grep -q "\[reconcile-push\] pushed" "$V/Meta/logs/vault-daily-maintenance.log" \
   || fail "the push is not logged"
 ok "ABS_RECONCILE_PUSH=1 pushes and logs it"
+
+# CASE 3b -- the sweep commit names the machine that ran it, and no agent.
+TRAILERS="$(git -C "$V" log -1 --format='%(trailers:only,unfold)')"
+echo "$TRAILERS" | grep -qx "Host: $(hostname -s)" \
+  || fail "the sweep commit lacks 'Host: $(hostname -s)'. Trailers: $TRAILERS"
+echo "$TRAILERS" | grep -q "^Assisted-by:" && fail "the sweep commit claims an agent with Assisted-by:"
+ok "the sweep commit carries Host: and no Assisted-by:"
 
 # CASE 4 -- without the variables nothing is pushed and the extra path is left alone.
 V2="$TMP/vault2"; R2="$TMP/remote2.git"

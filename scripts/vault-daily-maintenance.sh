@@ -287,10 +287,12 @@ if [ -d "$VAULT/.git" ] || git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; 
     if [ ${#PATHS[@]} -gt 0 ]; then
       # `--only` and the path-scoped diff keep a sibling session's staged work
       # out of this commit: a bare `git commit` takes the ENTIRE index (see
-      # vault-safe-commit.sh for the measured case).
+      # vault-safe-commit.sh for the measured case). The `Host:` trailer names the
+      # machine that ran the sweep; no `Assisted-by:`, since no agent took part.
       ( cd "$VAULT" && git add -- "${PATHS[@]}" 2>>"$LOG" \
           && { git diff --cached --quiet -- "${PATHS[@]}" \
                || git commit --only -m "maint: reconcile deferred session-close $(date +%Y-%m-%d)" \
+                    -m "Host: $(hostname -s)" \
                     -- "${PATHS[@]}" >/dev/null 2>>"$LOG"; } )
       log "[reconcile-commit] staged ${#PATHS[@]} close-artifact path(s)"
     fi
