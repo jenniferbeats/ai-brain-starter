@@ -144,6 +144,36 @@ rc="$(run_checker "$TMP/empty.md")"
 [ "$rc" = "2" ] && ok "phase-less rule exits 2 (cannot-check, not pass)" \
   || fail "phase-less rule returned $rc, expected 2"
 
+# --- 8. A localized rule is checked, not skipped as phase-less --------------
+# The cascade ships es/pt closing packs, so an installed rule can be written as
+# "## Fase 2 · Escribir". Matching only "## Phase N" with —/:/– made such a rule
+# read as phase-less: exit 2 (cannot check) every night, and the structural
+# checks never ran on it. NEGATIVE CONTROL: a Spanish duplicate must still fail,
+# so the localized file is genuinely parsed rather than merely tolerated.
+cat > "$TMP/es.md" <<'EOF'
+## Fase 0 · Lo que quedó a medias
+body
+## Fase 1 · Barrido de la conversación
+body
+## Fase 2 — Escribir en el vault
+body
+## Fase 3: Verificar y guardar
+body
+EOF
+rc="$(run_checker "$TMP/es.md")"
+[ "$rc" = "0" ] && ok "localized '## Fase N ·' rule is parsed and passes" \
+  || fail "localized '## Fase N ·' rule not checked (exit $rc, expected 0)"
+
+cat > "$TMP/es-dupe.md" <<'EOF'
+## Fase 1 · Barrido de la conversación
+body
+## Fase 1 · Escribir en el vault
+body
+EOF
+rc="$(run_checker "$TMP/es-dupe.md")"
+[ "$rc" = "1" ] && ok "duplicate number in a localized rule is rejected" \
+  || fail "duplicate in a localized rule NOT caught (exit $rc, expected 1)"
+
 if [ "$failed" -ne 0 ]; then
   echo "FAILED: close phase contract" >&2
   exit 1

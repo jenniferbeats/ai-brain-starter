@@ -63,8 +63,11 @@ DEFAULT_CASCADE = REPO_ROOT / "hooks" / "detect-closing-signal.py"
 # not the definition of it. Without this, such a heading counts as a second
 # Phase 1 and the duplicate check fires on a file that is perfectly correct;
 # a checker that cries wolf on real prose is one people learn to bypass.
+# "Fase" covers the es/pt closing packs the cascade ships, and "·" is a common
+# separator in localized rules ("## Fase 2 · Escribir"). Without them a localized
+# rule read as phase-less and was never checked at all (exit 2 every night).
 RULE_PHASE_RE = re.compile(
-    r"^##\s+Phase\s+(?P<num>\d+(?:\.\d+)?[a-z]?)\s*[—:–]\s*(?P<title>.*)$",
+    r"^##\s+(?:Phase|Fase)\s+(?P<num>\d+(?:\.\d+)?[a-z]?)\s*[—:–·]\s*(?P<title>.*)$",
     re.MULTILINE,
 )
 # "PHASE 4b — CLEAR THE SESSION GOAL"
@@ -175,7 +178,7 @@ def check(rule_path: Path, cascade_path: Path, strict_meaning: bool) -> int:
     print(f"cascade: {cascade_path}  ({len(cascade_phases)} phase line(s))")
     print(f"mode:    structural{' + meaning pins' if strict_meaning else ''}")
     if failures:
-        print("")
+        print()
         for f in failures:
             print(f"  FAIL: {f}")
         print(f"\nFAILED: {len(failures)} phase-contract violation(s)")
