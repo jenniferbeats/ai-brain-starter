@@ -284,11 +284,24 @@ if [ -d "$VAULT/.git" ] || git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; 
   # a sidecar-relocated vault .git is a POINTER FILE, so the assembled path can
   # never exist and this check would pass forever. Fails closed.
   if vault_git_wait_unlocked "$VAULT"; then
+    # A path git knows no file under -- an empty folder, or one .gitignore
+    # excludes -- passes `-e` but makes `git add` / `git commit --only` abort
+    # ("paths are ignored", "pathspec did not match"): ONE such path sank the
+    # whole night's commit and left the other paths staged for the next commit
+    # of any session. It is skipped with a log line instead.
+    reconcile_path_known() {
+      [ -n "$(git -C "$VAULT" ls-files --cached --others --exclude-standard -- "$1" 2>/dev/null | head -n 1)" ]
+    }
     PATHS=()
     for p in "$META_DIR/Sessions" "$META_DIR/Decisions" \
              "$META_DIR/Last Session.md" "$META_DIR/Decision Log.md" \
              "$META_DIR/Session Captures.md"; do
-      [ -e "$p" ] && PATHS+=("$p")
+      [ -e "$p" ] || continue
+      if reconcile_path_known "$p"; then
+        PATHS+=("$p")
+      else
+        log "[reconcile-commit] skipped '${p#"$VAULT"/}' - no file git knows (empty or ignored)"
+      fi
     done
     # ABS_RECONCILE_EXTRA_PATHS: more vault-relative paths the sweep also commits,
     # colon-separated because folder names may hold spaces or commas
@@ -296,7 +309,14 @@ if [ -d "$VAULT/.git" ] || git -C "$VAULT" rev-parse --git-dir >/dev/null 2>&1; 
     if [ -n "${ABS_RECONCILE_EXTRA_PATHS:-}" ]; then
       IFS=':' read -r -a EXTRA_PATHS <<< "$ABS_RECONCILE_EXTRA_PATHS"
       for p in "${EXTRA_PATHS[@]}"; do
-        [ -n "$p" ] && [ -e "$VAULT/$p" ] && PATHS+=("$VAULT/$p")
+        [ -n "$p" ] || continue
+        if [ ! -e "$VAULT/$p" ]; then
+          log "[reconcile-commit] skipped '$p' - not in the vault"
+        elif reconcile_path_known "$VAULT/$p"; then
+          PATHS+=("$VAULT/$p")
+        else
+          log "[reconcile-commit] skipped '$p' - no file git knows (empty or ignored)"
+        fi
       done
     fi
     if [ ${#PATHS[@]} -gt 0 ]; then

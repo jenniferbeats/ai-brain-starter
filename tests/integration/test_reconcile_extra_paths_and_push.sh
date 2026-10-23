@@ -24,7 +24,8 @@
 #
 # NEGATIVE CONTROL: against the pre-change script, case 1 fails (the extra path
 # is not committed), case 2 fails (the foreign staged file is swept in),
-# case 3 fails (nothing is pushed) and case 3b fails (no `Host:` trailer).
+# case 3 fails (nothing is pushed), case 3b fails (no `Host:` trailer) and
+# case 6 fails (an empty or ignored extra path sinks the whole commit).
 #
 # Self-contained: temp vault + bare remote + temp HOME, cleaned on exit.
 # NEVER touches a real vault. Exit 0 = pass.
@@ -131,5 +132,28 @@ run_reconcile "$V3" "$TMP/home3" ABS_RECONCILE_PUSH=1
 [ "$(git -C "$R3" rev-parse main)" = "$REMOTE_HEAD" ] || fail "a diverged remote was overwritten"
 grep -q "\[reconcile-push\] FAILED" "$V3/Meta/logs/vault-daily-maintenance.log" || fail "the rejected push is not logged"
 ok "a rejected push is logged and left alone"
+
+# CASE 6 -- an extra path git knows no file under (an empty folder, an ignored
+# folder, a path that does not exist) is skipped with a log line. Before, the
+# empty and the ignored folder passed `-e`, `git commit --only` aborted with
+# "pathspec did not match any file(s) known to git", NOTHING was committed that
+# night and the sweep's paths were left staged for the next commit of any session.
+V4="$TMP/vault4"; R4="$TMP/remote4.git"
+make_vault "$V4" "$R4"
+mkdir -p "$V4/Meta/Empty Folder" "$V4/Meta/Ignored Reports"
+echo "Meta/Ignored Reports/" > "$V4/.git/info/exclude"
+echo "report" > "$V4/Meta/Ignored Reports/r.md"
+run_reconcile "$V4" "$TMP/home4" \
+  ABS_RECONCILE_EXTRA_PATHS="Meta/Agent Memory:Meta/Empty Folder:Meta/Ignored Reports:Meta/Missing"
+LOG4="$V4/Meta/logs/vault-daily-maintenance.log"
+git -C "$V4" show --name-only --format= HEAD | grep -q "Meta/Agent Memory/a-memory.md" \
+  || fail "an empty or ignored extra path sank the whole sweep commit. Log: $(tail -5 "$LOG4")"
+git -C "$V4" diff --cached --name-only | grep -q "^Meta/" \
+  && fail "the sweep left its paths staged: $(git -C "$V4" diff --cached --name-only | tr '\n' ' ')"
+for skipped in "Meta/Empty Folder" "Meta/Ignored Reports" "Meta/Missing"; do
+  grep -qF "[reconcile-commit] skipped '$skipped'" "$LOG4" \
+    || fail "the skipped path '$skipped' is not logged"
+done
+ok "an empty, ignored or missing extra path is skipped and logged"
 
 echo "test_reconcile_extra_paths_and_push: OK"
