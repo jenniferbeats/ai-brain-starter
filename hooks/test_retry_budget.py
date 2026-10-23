@@ -97,7 +97,15 @@ class Sandbox:
     only as long as nothing sets GUARD_FIRES_LOG in the ambient environment --
     an explicit env var always wins. Set it here so hermeticity does not
     depend on that: any registration this Sandbox spawns writes telemetry
-    only under self.root, never a real session's log."""
+    only under self.root, never a real session's log.
+
+    admit() also reads the real machine: memory pressure, the 1-minute load
+    and the heavy jobs already running. On a busy host it denies a heavy
+    command (B3's `npm run build`, B5's `cargo build`) with exit 2 BEFORE
+    the call is counted, so those legs failed with timestamps=0 whenever the
+    test ran next to a real build. HEAVY_ADMISSION_BYPASS=1 switches off only
+    that check (retry-budget's own bypass is separate), so these legs measure
+    the count and nothing else; leg E2 holds it."""
 
     def __init__(self) -> None:
         self.root = Path(tempfile.mkdtemp(prefix="retry-budget-test-"))
@@ -110,7 +118,8 @@ class Sandbox:
         env.update(HOME=str(self.home), USERPROFILE=str(self.home),
                    TMPDIR=str(self.tmp), TEMP=str(self.tmp), TMP=str(self.tmp),
                    ABS_POSIX_PYTHON=sys.executable,
-                   GUARD_FIRES_LOG=str(self.root / "guard-fires.jsonl"))
+                   GUARD_FIRES_LOG=str(self.root / "guard-fires.jsonl"),
+                   HEAVY_ADMISSION_BYPASS="1")
         self.env = env
         self.state_path = self.tmp / f"claude-retry-budget-{SESSION}.json"
 
@@ -772,6 +781,28 @@ def leg_heavy_admission_telemetry_stays_in_the_sandbox() -> None:
         sb.cleanup()
 
 
+def leg_machine_load_never_reaches_the_count() -> None:
+    """Control for Sandbox.env's HEAVY_ADMISSION_BYPASS (see the class
+    docstring). A floor and ratio of 0 make any 1-minute load critical, so
+    heavy_admission denies every heavy command before it is counted -- the
+    state a busy machine is in when B3 and B5 run. With the Sandbox's env a
+    heavy command must still count; without the bypass (the premise) the
+    forced load must deny it, or this leg proves nothing."""
+    name = "E2 a heavy command is counted even when the machine's load reads critical"
+    sb = Sandbox()
+    try:
+        sb.env.update(CI_PARITY_LOAD_FLOOR="0", CI_PARITY_LOAD_RATIO="0")
+        code, _ = run_hook(sb, "npm run build --workspace api", "toolu_load_1")
+        counted = sb.attempts()
+        sb.env.pop("HEAVY_ADMISSION_BYPASS", None)
+        premise, _ = run_hook(sb, "cargo build --package example-crate --release", "toolu_load_2")
+        check(name, (code, counted) == (0, 1) and premise == 2 and sb.attempts() == 1,
+              f"with sandbox env: rc={code} timestamps={counted}; "
+              f"without the bypass: rc={premise} timestamps={sb.attempts()}")
+    finally:
+        sb.cleanup()
+
+
 def main() -> int:
     for line in (sys.stdout, sys.stderr):
         try:
@@ -802,6 +833,7 @@ def main() -> int:
     leg_existing_install_upgrades_to_one_blocking_registration()
     leg_installer_collapses_existing_copies_in_one_run()
     leg_heavy_admission_telemetry_stays_in_the_sandbox()
+    leg_machine_load_never_reaches_the_count()
     if FAILURES:
         print(f"\n{len(FAILURES)} control(s) FAILED:")
         for f in FAILURES:
