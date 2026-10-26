@@ -1,0 +1,43 @@
+name: prisma-parches
+
+# Fork-only gate for the prisma/parches branch. lint.yml only runs on main, so a
+# merge from upstream could drop one of the fork's patches without any check going
+# red. This runs the same canonical gate, scripts/ci.sh, which already names each
+# patch's test (e.g. test_reconcile_extra_paths_and_push pins the `Host:` trailer
+# of the nightly sweep).
+#
+# GitHub-hosted on purpose: the repo is public, and a self-hosted runner on a
+# public repo would run any fork PR's code on that machine. Public repos do not
+# spend Actions minutes on standard runners.
+
+on:
+  push:
+    branches: [prisma/parches]
+  pull_request:
+    branches: [prisma/parches]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prisma-parches-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ci gate on prisma/parches
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.9"
+      - name: configure git identity (integration tests create temp repos)
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "ci"
+      - name: install ruff (exercise the F821 block path in session-coordination-guards)
+        run: pipx install ruff || python3 -m pip install --user ruff || true
+      - name: run the canonical CI gate
+        run: bash scripts/ci.sh
