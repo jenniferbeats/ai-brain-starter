@@ -233,14 +233,30 @@ _is_critical() {
 run() {
   # run <label> <command...> - runs at low priority, logs a tail, never aborts,
   # and REMEMBERS a non-zero status for the summary + exit code.
+  # Each step gets ABS_STEP_TIMEOUT_S (default 1800), then rc=124: on 30-oct-2026
+  # one step hung 16 h on a stalled cloud folder and held every later one. The
+  # step runs in the background and writes to a file because `$(...)` would wait
+  # for a process that a kill cannot reach while it is stuck in the kernel.
   local label="$1"; shift
-  local out rc
+  local out rc outfile pid deadline
   # ABS_SKIP_STEPS: comma-separated step labels the user turned off
   # (e.g. "drift-detection,check-rule-conflicts"). Skipped, not failed.
   case ",${ABS_SKIP_STEPS:-}," in
     *",$label,"*) log "[$label] SKIPPED - listed in ABS_SKIP_STEPS"; return 0 ;;
   esac
-  out=$(nice -n 10 "$@" 2>&1); rc=$?
+  outfile="$(mktemp "${TMPDIR:-/tmp}/vault-maint-step.XXXXXX")"
+  nice -n 10 "$@" >"$outfile" 2>&1 &
+  pid=$!
+  deadline=$((SECONDS + ${ABS_STEP_TIMEOUT_S:-1800}))
+  while kill -0 "$pid" 2>/dev/null && [ "$SECONDS" -lt "$deadline" ]; do sleep 0.2; done
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -TERM "$pid" 2>/dev/null; sleep 2; kill -KILL "$pid" 2>/dev/null
+    rc=124
+    echo "TIMED OUT after ${ABS_STEP_TIMEOUT_S:-1800}s, moved on" >>"$outfile"
+  else
+    wait "$pid"; rc=$?
+  fi
+  out="$(cat "$outfile")"; rm -f "$outfile"
   printf '%s\n' "$out" | tail -3
   log "[$label] rc=$rc :: $(printf '%s\n' "$out" | tail -1)"
   if [ "$rc" -ne 0 ]; then
