@@ -224,6 +224,26 @@ STEPS
   ok "graph-cache prune: skipped without a cache, runs with a root or Meta cache"
 fi
 
+# CASE 7 -- a hung step is cut at its limit, counts as failed and frees the next
+# one. On 30-oct-2026 a step hung 16 h and held everything behind it.
+HARNESS_CRITICAL=''
+build_harness <<'STEPS'
+ABS_STEP_TIMEOUT_S=1
+run "hung-leg" sleep 60
+run "next-leg" echo next-leg-ran
+STEPS
+started=$SECONDS
+set +e
+run_sandboxed "$tmp/home7" bash "$tmp/h.sh" > "$tmp/o7" 2>&1
+rc7=$?
+set -e
+grep -q '\[hung-leg\] rc=124' "$tmp/o7" || fail "a hung step did not end with rc=124"
+grep -q 'next-leg-ran' "$tmp/o7" || fail "the step after a hung one never ran"
+[ "$((SECONDS - started))" -lt 30 ] || fail "the hung step was not cut at its limit"
+[ "$rc7" -eq 0 ] || fail "an advisory hung step changed the exit code (got $rc7)"
+grep -q 'hung-leg(rc=124)' "$tmp/o7" || fail "the summary does not name the hung step"
+ok "a hung step is cut at its limit and the next one runs"
+
 if [ "$FAILED" -ne 0 ]; then
   echo "test_daily_maintenance_exit_code: FAILED" >&2
   exit 1
